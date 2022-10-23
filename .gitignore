@@ -14,3 +14,7 @@
 
 # direnv cache
 .direnv
+
+.idea
+.fleet
+.vscode
