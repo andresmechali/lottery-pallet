@@ -134,6 +134,8 @@ pub const MILLICENTS: Balance = 1_000_000_000;
 pub const CENTS: Balance = 1_000 * MILLICENTS;
 pub const DOLLARS: Balance = 100 * CENTS;
 
+const CONTRACTS_DEBUG_OUTPUT: bool = true;
+
 const fn deposit(items: u32, bytes: u32) -> Balance {
 	items as Balance * 15 * CENTS + (bytes as Balance) * 6 * CENTS
 }
@@ -596,6 +598,47 @@ impl_runtime_apis! {
 			Executive::try_execute_block(block, state_root_check, select).expect("execute-block failed")
 		}
 	}
+
+	/*** Add this block ***/
+impl pallet_contracts_rpc_runtime_api::ContractsApi<Block, AccountId, Balance, BlockNumber, Hash> for Runtime {
+  fn call(
+	 origin: AccountId,
+	 dest: AccountId,
+	 value: Balance,
+	 gas_limit: u64,
+	 storage_deposit_limit: Option<Balance>,
+	 input_data: Vec<u8>,
+  ) -> pallet_contracts_primitives::ContractExecResult<Balance> {
+	 Contracts::bare_call(origin, dest, value, Weight::from_ref_time(gas_limit), storage_deposit_limit, input_data, CONTRACTS_DEBUG_OUTPUT)
+  }
+
+  fn instantiate(
+	 origin: AccountId,
+	 value: Balance,
+	 gas_limit: u64,
+	 storage_deposit_limit: Option<Balance>,
+	 code: pallet_contracts_primitives::Code<Hash>,
+	 data: Vec<u8>,
+	 salt: Vec<u8>,
+  ) -> pallet_contracts_primitives::ContractInstantiateResult<AccountId, Balance> {
+	 Contracts::bare_instantiate(origin, value, Weight::from_ref_time(gas_limit), storage_deposit_limit, code, data, salt, CONTRACTS_DEBUG_OUTPUT)
+  }
+
+  fn upload_code(
+	 origin: AccountId,
+	 code: Vec<u8>,
+	 storage_deposit_limit: Option<Balance>,
+  ) -> pallet_contracts_primitives::CodeUploadResult<Hash, Balance> {
+	 Contracts::bare_upload_code(origin, code, storage_deposit_limit)
+  }
+
+  fn get_storage(
+	 address: AccountId,
+	 key: Vec<u8>,
+  ) -> pallet_contracts_primitives::GetStorageResult {
+	 Contracts::get_storage(address, key)
+  }
+}
 }
 
 #[cfg(test)]
