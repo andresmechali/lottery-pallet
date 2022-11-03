@@ -29,6 +29,7 @@ pallet-transaction-payment = { version = "4.0.0-dev", default-features = false, 
 pallet-contracts = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.30" }
 pallet-contracts-primitives = { version = "6.0.0", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.30" }
 pallet-contracts-rpc-runtime-api = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.30" }
+pallet-vesting = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.30" }
 frame-executive = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.30" }
 sp-api = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.30" }
 sp-block-builder = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.30" }
@@ -84,6 +85,7 @@ std = [
 	"pallet-poe/std",
 	"pallet-lottery/std",
 	"pallet-timestamp/std",
+	"pallet-vesting/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
 	"pallet-transaction-payment/std",
 	"sp-api/std",
@@ -109,6 +111,7 @@ runtime-benchmarks = [
 	"pallet-poe/runtime-benchmarks",
 	"pallet-lottery/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
+	"pallet-vesting/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
 ]
 try-runtime = [
@@ -125,5 +128,6 @@ try-runtime = [
 	"pallet-poe/try-runtime",
 	"pallet-lottery/try-runtime",
 	"pallet-timestamp/try-runtime",
+	"pallet-vesting/try-runtime",
 	"pallet-transaction-payment/try-runtime",
 ]
