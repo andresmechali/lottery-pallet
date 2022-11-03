@@ -47,6 +47,8 @@ use pallet_transaction_payment::{ConstFeeMultiplier, CurrencyAdapter, Multiplier
 pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
 
+/// Import the lottery pallet.
+pub use pallet_lottery;
 /// Import the POE pallet.
 pub use pallet_poe;
 /// Import the template pallet.
@@ -326,6 +328,11 @@ impl pallet_poe::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 }
 
+impl pallet_lottery::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type LotteryRandomness = RandomnessCollectiveFlip;
+}
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub struct Runtime
@@ -346,6 +353,7 @@ construct_runtime!(
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
 		Poe: pallet_poe,
+		Lottery: pallet_lottery,
 	}
 );
 
@@ -394,6 +402,7 @@ mod benches {
 		[pallet_timestamp, Timestamp]
 		[pallet_template, TemplateModule]
 		[pallet_poe, Poe]
+		[pallet_lottery, Lottery]
 	);
 }
 
