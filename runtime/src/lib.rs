@@ -341,6 +341,7 @@ impl pallet_poe::Config for Runtime {
 impl pallet_lottery::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type LotteryRandomness = RandomnessCollectiveFlip;
+	type Currency = Balances;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
