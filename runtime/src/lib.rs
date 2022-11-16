@@ -39,6 +39,7 @@ pub use frame_support::{
 	},
 	StorageValue,
 };
+use frame_support::PalletId;
 pub use frame_system::Call as SystemCall;
 pub use pallet_balances::Call as BalancesCall;
 pub use pallet_timestamp::Call as TimestampCall;
@@ -338,10 +339,15 @@ impl pallet_poe::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 }
 
+parameter_types! {
+  pub const RoulettePalletId: PalletId = PalletId(*b"roulette");
+}
+
 impl pallet_lottery::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type LotteryRandomness = RandomnessCollectiveFlip;
 	type Currency = Balances;
+	type PalletId = RoulettePalletId;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

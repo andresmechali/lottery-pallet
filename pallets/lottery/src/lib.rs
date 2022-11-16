@@ -39,10 +39,13 @@ pub mod pallet {
 	use crate::{BalanceOf, RouletteType, TicketData};
 	use frame_support::{
 		pallet_prelude::*,
-		traits::{Randomness, ReservableCurrency},
+		traits::{Randomness},
+		PalletId
 	};
+	use frame_support::traits::{Currency, ExistenceRequirement};
 	use frame_system::pallet_prelude::*;
 	use sp_core::H256;
+	use sp_runtime::{traits::AccountIdConversion, Saturating};
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
@@ -56,7 +59,11 @@ pub mod pallet {
 
 		type LotteryRandomness: Randomness<H256, u32>;
 
-		type Currency: ReservableCurrency<Self::AccountId>;
+		// type Currency: ReservableCurrency<Self::AccountId>;
+		type Currency: Currency<Self::AccountId>;
+
+		#[pallet::constant]
+		type PalletId: Get<PalletId>;
 	}
 
 	// Pallets use events to inform users when important changes are made.
@@ -110,11 +117,11 @@ pub mod pallet {
 			// This function will return an error if the extrinsic is not signed.
 			let sender = ensure_signed(origin)?;
 
-			// TODO: Verify that the buyer has enough balance to afford the ticket
-
-			// TODO: Verify that the buyer is left with more than the existential deposit
-
-			// TODO: Transfer balance
+			// Verify that the buyer has enough balance to afford the ticket and is
+			// left with more than the existential deposit
+			let total_balance = T::Currency::total_balance(&sender);
+			let existential_deposit = T::Currency::minimum_balance();
+			ensure!(total_balance.saturating_sub(amount) >= existential_deposit, Error::<T>::NotEnoughBalance);
 
 			// Verify that the specified claim has not already been stored.
 			// ensure!(!Claims::<T>::contains_key(&claim), Error::<T>::AlreadyClaimed);
@@ -123,6 +130,13 @@ pub mod pallet {
 			let current_block = <frame_system::Pallet<T>>::block_number();
 
 			let ticket_id = Self::get_and_increment_nonce();
+
+			let account_id = Self::account_id();
+
+			// TODO: get random roulette number
+
+			// Transfer balance
+			T::Currency::transfer(&sender, &account_id, amount, ExistenceRequirement::KeepAlive)?;
 
 			// Store the ticket ownership.
 			Tickets::<T>::insert(
@@ -136,7 +150,7 @@ pub mod pallet {
 				},
 			);
 
-			// Emit an event that the claim was created.
+			// Emit an event showing that the claim was created.
 			Self::deposit_event(Event::TicketIssued { who: sender, ticket_id });
 
 			Ok(())
@@ -145,6 +159,10 @@ pub mod pallet {
 
 	// Helper functions
 	impl<T: Config> Pallet<T> {
+		fn account_id() -> T::AccountId {
+			T::PalletId::get().into_account_truncating()
+		}
+
 		fn get_and_increment_nonce() -> u64 {
 			// Note: Can this be atomic to avoid a race?
 			let nonce = TicketNonce::<T>::get();
