@@ -9,40 +9,81 @@ type BalanceOf<T> =
 	<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 
 #[derive(
-	Encode, Decode, Default, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
-pub enum RouletteType {
-	Color,
-	Dozen,
-	#[default]
-	Full,
+pub enum DozenOrColumn {
+	First,
+	Second,
+	Third,
 }
 
 #[derive(
-	Encode, Decode, Default, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
-pub struct TicketData<AccountId, BlockNumber, Balance> {
-	/// Ticket id.
+pub enum Bet {
+	ColorPick(RouletteColor),
+	FullPick(u32),
+	DozenPick(DozenOrColumn),
+	ColumnPick(DozenOrColumn),
+}
+
+#[derive(Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug)]
+pub struct BetData<AccountId, BlockNumber, Balance> {
+	/// Bet id.
 	id: u64,
-	/// Ticket buyer.
+	/// Owner of the bet.
 	owner: AccountId,
 	/// Bet amount.
 	amount: Balance,
 	/// Block in which bet occurs.
 	block: BlockNumber,
+	/// Winner number.
+	winner_number: u32,
 	/// Type of bet.
-	roulette_type: RouletteType,
+	bet: Bet,
+}
+
+#[derive(
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+)]
+pub enum RouletteColor {
+	Red,
+	Black,
+	Green,
+}
+
+trait GetColor {
+	fn to_color(&self) -> Option<RouletteColor>;
+}
+
+impl GetColor for u32 {
+	fn to_color(&self) -> Option<RouletteColor> {
+		match self {
+			0 => Some(RouletteColor::Green),
+			1..=10 | 19..=28 => {
+				if self % 2 == 0 {
+					Some(RouletteColor::Black)
+				} else {
+					Some(RouletteColor::Red)
+				}
+			},
+			11..=18 | 29..=36 => {
+				if self % 2 == 0 {
+					Some(RouletteColor::Red)
+				} else {
+					Some(RouletteColor::Black)
+				}
+			},
+			_ => None,
+		}
+	}
 }
 
 #[frame_support::pallet]
 pub mod pallet {
-	use crate::{BalanceOf, RouletteType, TicketData};
-	use frame_support::{
-		pallet_prelude::*,
-		traits::{Randomness},
-		PalletId
-	};
+	use crate::{BalanceOf, Bet, BetData, DozenOrColumn, GetColor, RouletteColor};
 	use frame_support::traits::{Currency, ExistenceRequirement};
+	use frame_support::{pallet_prelude::*, traits::Randomness, PalletId};
 	use frame_system::pallet_prelude::*;
 	use sp_core::H256;
 	use sp_runtime::{traits::AccountIdConversion, Saturating};
@@ -71,87 +112,137 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		// TODO: create generic type for TicketId and Prize
-		/// Event emitted when a ticket has been issued.
-		TicketIssued { who: T::AccountId, ticket_id: u64 },
-		/// Event emitted when a prized has been paid.
-		PrizePaid { who: T::AccountId, ticket_id: u64, prize: u64 },
+		// TODO: create generic type for BetId and Prize
+		/// Event emitted when a bet has been placed
+		BetPlaced { bet_id: u64, who: T::AccountId, bet: Bet, amount: BalanceOf<T> },
+		/// Event emitted when a game was won.
+		RouletteWon {
+			who: T::AccountId,
+			bet_id: u64,
+			bet: Bet,
+			winner_number: u32,
+			winner_color: Option<RouletteColor>,
+			prize: BalanceOf<T>,
+		},
+		/// Event emitted when a game was lost.
+		RouletteLost {
+			who: T::AccountId,
+			bet_id: u64,
+			bet: Bet,
+			winner_number: u32,
+			winner_color: Option<RouletteColor>,
+			amount: BalanceOf<T>,
+		},
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
-		/// Not enough participants.
-		NotEnoughParticipants,
-		/// Not enough balance to afford a ticket.
+		/// Not enough balance to afford the bet.
 		NotEnoughBalance,
+		/// Number must be between 0 and 36
+		OutOfRange,
 	}
 
 	#[pallet::type_value]
-	pub fn DefaultTicketNonce<T: Config>() -> u64 {
+	pub fn DefaultBetNonce<T: Config>() -> u64 {
 		0u64
 	}
 
 	#[pallet::storage]
-	pub(super) type TicketNonce<T: Config> =
-		StorageValue<_, u64, ValueQuery, DefaultTicketNonce<T>>;
+	pub(super) type BetNonce<T: Config> = StorageValue<_, u64, ValueQuery, DefaultBetNonce<T>>;
 
 	#[pallet::storage]
-	pub(super) type Tickets<T: Config> = StorageMap<
-		_,
-		Blake2_128Concat,
-		u64,
-		TicketData<T::AccountId, T::BlockNumber, BalanceOf<T>>,
-	>;
+	pub(super) type Bets<T: Config> =
+		StorageMap<_, Blake2_128Concat, u64, BetData<T::AccountId, T::BlockNumber, BalanceOf<T>>>;
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::weight(0)]
-		pub fn buy_ticket(
-			origin: OriginFor<T>,
-			amount: BalanceOf<T>,
-			roulette_type: RouletteType,
-		) -> DispatchResult {
-			// TODO: allow to buy multiple tickets, each for a fixed amount of tokens
-
+		pub fn place_bet(origin: OriginFor<T>, amount: BalanceOf<T>, bet: Bet) -> DispatchResult {
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
 			let sender = ensure_signed(origin)?;
 
-			// Verify that the buyer has enough balance to afford the ticket and is
-			// left with more than the existential deposit
+			// Verify that the buyer has enough balance to afford the bet and is
+			// left with more than the existential deposit.
 			let total_balance = T::Currency::total_balance(&sender);
 			let existential_deposit = T::Currency::minimum_balance();
-			ensure!(total_balance.saturating_sub(amount) >= existential_deposit, Error::<T>::NotEnoughBalance);
+			ensure!(
+				total_balance.saturating_sub(amount) >= existential_deposit,
+				Error::<T>::NotEnoughBalance
+			);
 
-			// Verify that the specified claim has not already been stored.
-			// ensure!(!Claims::<T>::contains_key(&claim), Error::<T>::AlreadyClaimed);
+			// TODO: Verify that the pallet account has enough balance to afford a payout
+			// For this we need to keep track of all the possible payouts of the current block.
 
-			// Get the block number from the FRAME System pallet.
+			// Get the block number.
 			let current_block = <frame_system::Pallet<T>>::block_number();
 
-			let ticket_id = Self::get_and_increment_nonce();
+			// Get random roulette number
+			let random_number = Self::random_number(37_u32);
 
+			// Generate new bet
+			let bet_id = Self::get_and_increment_nonce();
 			let account_id = Self::account_id();
 
-			// TODO: get random roulette number
-
-			// Transfer balance
-			T::Currency::transfer(&sender, &account_id, amount, ExistenceRequirement::KeepAlive)?;
-
-			// Store the ticket ownership.
-			Tickets::<T>::insert(
-				ticket_id,
-				TicketData {
-					id: ticket_id,
+			// Store the bet.
+			Bets::<T>::insert(
+				bet_id,
+				BetData {
+					id: bet_id,
 					owner: sender.clone(),
 					amount,
 					block: current_block,
-					roulette_type,
+					winner_number: random_number,
+					bet: bet.clone(),
 				},
 			);
 
 			// Emit an event showing that the claim was created.
-			Self::deposit_event(Event::TicketIssued { who: sender, ticket_id });
+			Self::deposit_event(Event::BetPlaced {
+				who: sender.clone(),
+				bet_id,
+				amount,
+				bet: bet.clone(),
+			});
+
+			let is_winner = Self::is_winner(bet.clone(), random_number);
+
+			if is_winner {
+				let payout_amount = Self::amount_won(bet.clone(), amount);
+				// Transfer balance
+				T::Currency::transfer(
+					&account_id,
+					&sender,
+					payout_amount,
+					ExistenceRequirement::KeepAlive,
+				)?;
+
+				Self::deposit_event(Event::RouletteWon {
+					who: sender,
+					bet_id,
+					bet,
+					winner_number: random_number,
+					winner_color: random_number.to_color(),
+					prize: payout_amount,
+				});
+			} else {
+				T::Currency::transfer(
+					&sender,
+					&account_id,
+					amount,
+					ExistenceRequirement::KeepAlive,
+				)?;
+
+				Self::deposit_event(Event::RouletteLost {
+					who: sender,
+					bet_id,
+					bet,
+					winner_number: random_number,
+					winner_color: random_number.to_color(),
+					amount,
+				});
+			}
 
 			Ok(())
 		}
@@ -164,10 +255,67 @@ pub mod pallet {
 		}
 
 		fn get_and_increment_nonce() -> u64 {
-			// Note: Can this be atomic to avoid a race?
-			let nonce = TicketNonce::<T>::get();
-			TicketNonce::<T>::put(nonce.wrapping_add(1));
+			let nonce = BetNonce::<T>::get();
+			BetNonce::<T>::put(nonce.wrapping_add(1));
 			nonce
+		}
+
+		fn random_number(total: u32) -> u32 {
+			let (random_seed, _) = T::LotteryRandomness::random_seed();
+			let random_number = <u32>::decode(&mut random_seed.as_ref())
+				.expect("secure hashes should always be bigger than u32; qed");
+			random_number % total
+		}
+
+		fn is_color_winner(color: RouletteColor, winner_number: u32) -> bool {
+			match winner_number.to_color() {
+				Some(winner_color) => winner_color == color,
+				None => false,
+			}
+		}
+
+		fn is_dozen_winner(dozen: DozenOrColumn, winner_number: u32) -> bool {
+			match winner_number {
+				0 => false,
+				1..=12 => dozen == DozenOrColumn::First,
+				13..=24 => dozen == DozenOrColumn::Second,
+				25..=36 => dozen == DozenOrColumn::Third,
+				_ => false,
+			}
+		}
+
+		// TODO: change conditions
+		fn is_column_winner(column: DozenOrColumn, winner_number: u32) -> bool {
+			match winner_number {
+				0 => false,
+				1..=12 => column == DozenOrColumn::First,
+				13..=24 => column == DozenOrColumn::Second,
+				25..=36 => column == DozenOrColumn::Third,
+				_ => false,
+			}
+		}
+
+		fn is_full_winner(picked_number: u32, winner_number: u32) -> bool {
+			picked_number == winner_number
+		}
+
+		fn is_winner(pick: Bet, winner_number: u32) -> bool {
+			match pick {
+				Bet::ColorPick(color) => Self::is_color_winner(color, winner_number),
+				Bet::FullPick(number) => Self::is_full_winner(number, winner_number),
+				Bet::DozenPick(dozen) => Self::is_dozen_winner(dozen, winner_number),
+				Bet::ColumnPick(column) => Self::is_column_winner(column, winner_number),
+			}
+		}
+
+		fn amount_won(pick: Bet, amount: BalanceOf<T>) -> BalanceOf<T> {
+			match pick {
+				// TODO: use consts
+				Bet::ColorPick(_) => amount.saturating_mul(BalanceOf::<T>::from(2_u32)),
+				Bet::FullPick(_) => amount.saturating_mul(BalanceOf::<T>::from(36_u32)),
+				Bet::DozenPick(_) => amount.saturating_mul(BalanceOf::<T>::from(3_u32)),
+				Bet::ColumnPick(_) => amount.saturating_mul(BalanceOf::<T>::from(3_u32)),
+			}
 		}
 	}
 }
