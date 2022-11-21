@@ -27,6 +27,7 @@ use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 // A few exports that help ease life for downstream crates.
+use frame_support::PalletId;
 pub use frame_support::{
 	construct_runtime, parameter_types,
 	traits::{
@@ -39,7 +40,6 @@ pub use frame_support::{
 	},
 	StorageValue,
 };
-use frame_support::PalletId;
 pub use frame_system::Call as SystemCall;
 pub use pallet_balances::Call as BalancesCall;
 pub use pallet_timestamp::Call as TimestampCall;
@@ -51,8 +51,6 @@ pub use sp_runtime::{Perbill, Permill};
 
 /// Import the lottery pallet.
 pub use pallet_lottery;
-/// Import the POE pallet.
-pub use pallet_poe;
 /// Import the template pallet.
 pub use pallet_template;
 
@@ -335,10 +333,6 @@ impl pallet_template::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 }
 
-impl pallet_poe::Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
-}
-
 parameter_types! {
   pub const RoulettePalletId: PalletId = PalletId(*b"roulette");
 }
@@ -370,7 +364,6 @@ construct_runtime!(
 		Contracts: pallet_contracts,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
-		Poe: pallet_poe,
 		Lottery: pallet_lottery,
 	}
 );
@@ -420,7 +413,6 @@ mod benches {
 		[pallet_vesting, Vesting]
 		[pallet_timestamp, Timestamp]
 		[pallet_template, TemplateModule]
-		[pallet_poe, Poe]
 		[pallet_lottery, Lottery]
 	);
 }
