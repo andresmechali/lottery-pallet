@@ -20,11 +20,29 @@ pub enum DozenOrColumn {
 #[derive(
 	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
+pub enum Half {
+	First,
+	Second,
+}
+
+#[derive(
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+)]
+pub enum OddOrEven {
+	Odd,
+	Even,
+}
+
+#[derive(
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+)]
 pub enum Bet {
 	ColorPick(RouletteColor),
 	FullPick(u32),
 	DozenPick(DozenOrColumn),
 	ColumnPick(DozenOrColumn),
+	HalfPick(Half),
+	OddOrEven(OddOrEven),
 }
 
 #[derive(Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug)]
@@ -52,11 +70,19 @@ pub enum RouletteColor {
 	Green,
 }
 
-trait GetColor {
+trait RouletteNumber {
 	fn to_color(&self) -> Option<RouletteColor>;
+
+	fn to_dozen(&self) -> Option<DozenOrColumn>;
+
+	fn to_column(&self) -> Option<DozenOrColumn>;
+
+	fn is_even(&self) -> bool;
+
+	fn to_half(&self) -> Option<Half>;
 }
 
-impl GetColor for u32 {
+impl RouletteNumber for u32 {
 	fn to_color(&self) -> Option<RouletteColor> {
 		match self {
 			0 => Some(RouletteColor::Green),
@@ -77,11 +103,52 @@ impl GetColor for u32 {
 			_ => None,
 		}
 	}
+
+	fn to_dozen(&self) -> Option<DozenOrColumn> {
+		match self {
+			1..=12 => Some(DozenOrColumn::First),
+			13..=24 => Some(DozenOrColumn::Second),
+			25..=36 => Some(DozenOrColumn::Third),
+			_ => None,
+		}
+	}
+
+	fn to_column(&self) -> Option<DozenOrColumn> {
+		match self {
+			1..=36 => {
+				if self % 3 == 1 {
+					Some(DozenOrColumn::First)
+				} else if self % 3 == 2 {
+					Some(DozenOrColumn::Second)
+				} else {
+					Some(DozenOrColumn::Third)
+				}
+			},
+			_ => None,
+		}
+	}
+
+	fn is_even(&self) -> bool {
+		match self {
+			1..=36 => self % 2 == 0,
+			_ => false,
+		}
+	}
+
+	fn to_half(&self) -> Option<Half> {
+		match self {
+			1..=18 => Some(Half::First),
+			19..=36 => Some(Half::Second),
+			_ => None,
+		}
+	}
 }
 
 #[frame_support::pallet]
 pub mod pallet {
-	use crate::{BalanceOf, Bet, BetData, DozenOrColumn, GetColor, RouletteColor};
+	use crate::{
+		BalanceOf, Bet, BetData, DozenOrColumn, Half, OddOrEven, RouletteColor, RouletteNumber,
+	};
 	use frame_support::traits::{Currency, ExistenceRequirement};
 	use frame_support::{pallet_prelude::*, traits::Randomness, PalletId};
 	use frame_system::pallet_prelude::*;
@@ -112,7 +179,6 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		// TODO: create generic type for BetId and Prize
 		/// Event emitted when a bet has been placed
 		BetPlaced { bet_id: u64, who: T::AccountId, bet: Bet, amount: BalanceOf<T> },
 		/// Event emitted when a game was won.
@@ -171,9 +237,6 @@ pub mod pallet {
 				total_balance.saturating_sub(amount) >= existential_deposit,
 				Error::<T>::NotEnoughBalance
 			);
-
-			// TODO: Verify that the pallet account has enough balance to afford a payout
-			// For this we need to keep track of all the possible payouts of the current block.
 
 			// Get the block number.
 			let current_block = <frame_system::Pallet<T>>::block_number();
@@ -275,28 +338,35 @@ pub mod pallet {
 		}
 
 		fn is_dozen_winner(dozen: DozenOrColumn, winner_number: u32) -> bool {
-			match winner_number {
-				0 => false,
-				1..=12 => dozen == DozenOrColumn::First,
-				13..=24 => dozen == DozenOrColumn::Second,
-				25..=36 => dozen == DozenOrColumn::Third,
-				_ => false,
+			match winner_number.to_dozen() {
+				Some(winner_dozen) => winner_dozen == dozen,
+				None => false,
 			}
 		}
 
-		// TODO: change conditions
 		fn is_column_winner(column: DozenOrColumn, winner_number: u32) -> bool {
-			match winner_number {
-				0 => false,
-				1..=12 => column == DozenOrColumn::First,
-				13..=24 => column == DozenOrColumn::Second,
-				25..=36 => column == DozenOrColumn::Third,
-				_ => false,
+			match winner_number.to_column() {
+				Some(winner_column) => winner_column == column,
+				None => false,
 			}
 		}
 
-		fn is_full_winner(picked_number: u32, winner_number: u32) -> bool {
-			picked_number == winner_number
+		fn is_full_winner(number: u32, winner_number: u32) -> bool {
+			winner_number == number
+		}
+
+		fn is_half_winner(half: Half, winner_number: u32) -> bool {
+			match winner_number.to_half() {
+				Some(winner_half) => winner_half == half,
+				None => false,
+			}
+		}
+
+		fn is_odd_or_even_winner(odd_or_even: OddOrEven, winner_number: u32) -> bool {
+			match winner_number.is_even() {
+				true => odd_or_even == OddOrEven::Even,
+				false => odd_or_even == OddOrEven::Odd,
+			}
 		}
 
 		fn is_winner(pick: Bet, winner_number: u32) -> bool {
@@ -305,16 +375,21 @@ pub mod pallet {
 				Bet::FullPick(number) => Self::is_full_winner(number, winner_number),
 				Bet::DozenPick(dozen) => Self::is_dozen_winner(dozen, winner_number),
 				Bet::ColumnPick(column) => Self::is_column_winner(column, winner_number),
+				Bet::HalfPick(half) => Self::is_half_winner(half, winner_number),
+				Bet::OddOrEven(odd_or_even) => {
+					Self::is_odd_or_even_winner(odd_or_even, winner_number)
+				},
 			}
 		}
 
 		fn amount_won(pick: Bet, amount: BalanceOf<T>) -> BalanceOf<T> {
 			match pick {
-				// TODO: use consts
 				Bet::ColorPick(_) => amount.saturating_mul(BalanceOf::<T>::from(2_u32)),
 				Bet::FullPick(_) => amount.saturating_mul(BalanceOf::<T>::from(36_u32)),
 				Bet::DozenPick(_) => amount.saturating_mul(BalanceOf::<T>::from(3_u32)),
 				Bet::ColumnPick(_) => amount.saturating_mul(BalanceOf::<T>::from(3_u32)),
+				Bet::HalfPick(_) => amount.saturating_mul(BalanceOf::<T>::from(2_u32)),
+				Bet::OddOrEven(_) => amount.saturating_mul(BalanceOf::<T>::from(2_u32)),
 			}
 		}
 	}
