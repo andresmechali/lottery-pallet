@@ -1,6 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use frame_support::traits::Currency;
 // Re-export pallet items so that they can be accessed from the crate namespace.
 pub use pallet::*;
 
@@ -10,17 +9,22 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-type BalanceOf<T> =
-	<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
-
 #[frame_support::pallet]
 pub mod pallet {
-	use crate::BalanceOf;
-	use frame_support::traits::{Currency, ExistenceRequirement};
+	use codec::Codec;
+	use frame_support::traits::{
+		fungible::{Inspect, Mutate, Transfer},
+		ExistenceRequirement, LockableCurrency,
+	};
 	use frame_support::{pallet_prelude::*, traits::Randomness, PalletId};
 	use frame_system::pallet_prelude::*;
 	use sp_core::H256;
-	use sp_runtime::{traits::AccountIdConversion, Saturating};
+	use sp_runtime::{
+		traits::{
+			AccountIdConversion, AtLeast32BitUnsigned, CheckedAdd, CheckedMul, CheckedSub, Zero,
+		},
+		Saturating,
+	};
 	use traits::{Bet, BetData, DozenOrColumn, Half, OddOrEven, RouletteColor, RouletteNumber};
 
 	#[pallet::pallet]
@@ -33,10 +37,29 @@ pub mod pallet {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 
+		#[allow(missing_docs)]
+		type Balance: Default
+			+ Parameter
+			+ Codec
+			+ Copy
+			+ Ord
+			+ CheckedAdd
+			+ CheckedSub
+			+ CheckedMul
+			+ AtLeast32BitUnsigned
+			+ MaybeSerializeDeserialize
+			+ MaxEncodedLen
+			+ Zero;
+
 		type LotteryRandomness: Randomness<H256, u32>;
 
 		// type Currency: ReservableCurrency<Self::AccountId>;
-		type Currency: Currency<Self::AccountId>;
+		// type Currency: Currency<Self::AccountId>;
+
+		type Currency: Inspect<Self::AccountId, Balance = Self::Balance>
+			+ Transfer<Self::AccountId, Balance = Self::Balance>
+			+ Mutate<Self::AccountId>
+			+ LockableCurrency<Self::AccountId, Balance = Self::Balance>;
 
 		#[pallet::constant]
 		type PalletId: Get<PalletId>;
@@ -48,7 +71,7 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		/// Event emitted when a bet has been placed
-		BetPlaced { bet_id: u64, who: T::AccountId, bet: Bet, amount: BalanceOf<T> },
+		BetPlaced { bet_id: u64, who: T::AccountId, bet: Bet, amount: T::Balance },
 		/// Event emitted when a game was won.
 		RouletteWon {
 			who: T::AccountId,
@@ -56,7 +79,7 @@ pub mod pallet {
 			bet: Bet,
 			winner_number: u32,
 			winner_color: Option<RouletteColor>,
-			prize: BalanceOf<T>,
+			prize: T::Balance,
 		},
 		/// Event emitted when a game was lost.
 		RouletteLost {
@@ -65,7 +88,7 @@ pub mod pallet {
 			bet: Bet,
 			winner_number: u32,
 			winner_color: Option<RouletteColor>,
-			amount: BalanceOf<T>,
+			amount: T::Balance,
 		},
 	}
 
@@ -87,12 +110,12 @@ pub mod pallet {
 
 	#[pallet::storage]
 	pub(super) type Bets<T: Config> =
-		StorageMap<_, Blake2_128Concat, u64, BetData<T::AccountId, T::BlockNumber, BalanceOf<T>>>;
+		StorageMap<_, Blake2_128Concat, u64, BetData<T::AccountId, T::BlockNumber, T::Balance>>;
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::weight(0)]
-		pub fn place_bet(origin: OriginFor<T>, amount: BalanceOf<T>, bet: Bet) -> DispatchResult {
+		pub fn place_bet(origin: OriginFor<T>, amount: T::Balance, bet: Bet) -> DispatchResult {
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
 			let sender = ensure_signed(origin)?;
@@ -250,14 +273,14 @@ pub mod pallet {
 			}
 		}
 
-		fn amount_won(pick: Bet, amount: BalanceOf<T>) -> BalanceOf<T> {
+		fn amount_won(pick: Bet, amount: T::Balance) -> T::Balance {
 			match pick {
-				Bet::ColorPick(_) => amount.saturating_mul(BalanceOf::<T>::from(2_u32)),
-				Bet::FullPick(_) => amount.saturating_mul(BalanceOf::<T>::from(36_u32)),
-				Bet::DozenPick(_) => amount.saturating_mul(BalanceOf::<T>::from(3_u32)),
-				Bet::ColumnPick(_) => amount.saturating_mul(BalanceOf::<T>::from(3_u32)),
-				Bet::HalfPick(_) => amount.saturating_mul(BalanceOf::<T>::from(2_u32)),
-				Bet::OddOrEven(_) => amount.saturating_mul(BalanceOf::<T>::from(2_u32)),
+				Bet::ColorPick(_) => amount.saturating_mul(T::Balance::from(2_u32)),
+				Bet::FullPick(_) => amount.saturating_mul(T::Balance::from(36_u32)),
+				Bet::DozenPick(_) => amount.saturating_mul(T::Balance::from(3_u32)),
+				Bet::ColumnPick(_) => amount.saturating_mul(T::Balance::from(3_u32)),
+				Bet::HalfPick(_) => amount.saturating_mul(T::Balance::from(2_u32)),
+				Bet::OddOrEven(_) => amount.saturating_mul(T::Balance::from(2_u32)),
 			}
 		}
 	}
