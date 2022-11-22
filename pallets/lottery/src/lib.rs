@@ -14,7 +14,7 @@ pub mod pallet {
 	use codec::Codec;
 	use frame_support::traits::{
 		fungible::{Inspect, Mutate, Transfer},
-		ExistenceRequirement, LockableCurrency,
+		LockIdentifier, LockableCurrency, WithdrawReasons,
 	};
 	use frame_support::{pallet_prelude::*, traits::Randomness, PalletId};
 	use frame_system::pallet_prelude::*;
@@ -26,6 +26,9 @@ pub mod pallet {
 		Saturating,
 	};
 	use traits::{Bet, BetData, DozenOrColumn, Half, OddOrEven, RouletteColor, RouletteNumber};
+
+	// The LockIdentifier constant.
+	const PALLET_ID: LockIdentifier = *b"roulette";
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
@@ -52,9 +55,6 @@ pub mod pallet {
 			+ Zero;
 
 		type LotteryRandomness: Randomness<H256, u32>;
-
-		// type Currency: ReservableCurrency<Self::AccountId>;
-		// type Currency: Currency<Self::AccountId>;
 
 		type Currency: Inspect<Self::AccountId, Balance = Self::Balance>
 			+ Transfer<Self::AccountId, Balance = Self::Balance>
@@ -122,12 +122,17 @@ pub mod pallet {
 
 			// Verify that the buyer has enough balance to afford the bet and is
 			// left with more than the existential deposit.
-			let total_balance = T::Currency::total_balance(&sender);
+			let total_balance = T::Currency::balance(&sender);
 			let existential_deposit = T::Currency::minimum_balance();
 			ensure!(
 				total_balance.saturating_sub(amount) >= existential_deposit,
 				Error::<T>::NotEnoughBalance
 			);
+
+			// Lock balance for sender
+			T::Currency::set_lock(PALLET_ID, &sender, amount, WithdrawReasons::RESERVE);
+
+			// TODO: calculate lock for pallet and set it
 
 			// Get the block number.
 			let current_block = <frame_system::Pallet<T>>::block_number();
@@ -162,15 +167,13 @@ pub mod pallet {
 
 			let is_winner = Self::is_winner(bet.clone(), random_number);
 
+			T::Currency::remove_lock(PALLET_ID, &sender);
+
 			if is_winner {
 				let payout_amount = Self::amount_won(bet.clone(), amount);
+				// TODO: unlock funds
 				// Transfer balance
-				T::Currency::transfer(
-					&account_id,
-					&sender,
-					payout_amount,
-					ExistenceRequirement::KeepAlive,
-				)?;
+				T::Currency::transfer(&account_id, &sender, payout_amount, true)?;
 
 				Self::deposit_event(Event::RouletteWon {
 					who: sender,
@@ -181,12 +184,7 @@ pub mod pallet {
 					prize: payout_amount,
 				});
 			} else {
-				T::Currency::transfer(
-					&sender,
-					&account_id,
-					amount,
-					ExistenceRequirement::KeepAlive,
-				)?;
+				T::Currency::transfer(&sender, &account_id, amount, true)?;
 
 				Self::deposit_event(Event::RouletteLost {
 					who: sender,
@@ -200,6 +198,8 @@ pub mod pallet {
 
 			Ok(())
 		}
+
+		// TODO: play roulette once per block
 	}
 
 	// Helper functions
@@ -262,11 +262,11 @@ pub mod pallet {
 
 		fn is_winner(pick: Bet, winner_number: u32) -> bool {
 			match pick {
-				Bet::ColorPick(color) => Self::is_color_winner(color, winner_number),
-				Bet::FullPick(number) => Self::is_full_winner(number, winner_number),
-				Bet::DozenPick(dozen) => Self::is_dozen_winner(dozen, winner_number),
-				Bet::ColumnPick(column) => Self::is_column_winner(column, winner_number),
-				Bet::HalfPick(half) => Self::is_half_winner(half, winner_number),
+				Bet::Color(color) => Self::is_color_winner(color, winner_number),
+				Bet::Full(number) => Self::is_full_winner(number, winner_number),
+				Bet::Dozen(dozen) => Self::is_dozen_winner(dozen, winner_number),
+				Bet::Column(column) => Self::is_column_winner(column, winner_number),
+				Bet::Half(half) => Self::is_half_winner(half, winner_number),
 				Bet::OddOrEven(odd_or_even) => {
 					Self::is_odd_or_even_winner(odd_or_even, winner_number)
 				},
@@ -275,11 +275,11 @@ pub mod pallet {
 
 		fn amount_won(pick: Bet, amount: T::Balance) -> T::Balance {
 			match pick {
-				Bet::ColorPick(_) => amount.saturating_mul(T::Balance::from(2_u32)),
-				Bet::FullPick(_) => amount.saturating_mul(T::Balance::from(36_u32)),
-				Bet::DozenPick(_) => amount.saturating_mul(T::Balance::from(3_u32)),
-				Bet::ColumnPick(_) => amount.saturating_mul(T::Balance::from(3_u32)),
-				Bet::HalfPick(_) => amount.saturating_mul(T::Balance::from(2_u32)),
+				Bet::Color(_) => amount.saturating_mul(T::Balance::from(2_u32)),
+				Bet::Full(_) => amount.saturating_mul(T::Balance::from(36_u32)),
+				Bet::Dozen(_) => amount.saturating_mul(T::Balance::from(3_u32)),
+				Bet::Column(_) => amount.saturating_mul(T::Balance::from(3_u32)),
+				Bet::Half(_) => amount.saturating_mul(T::Balance::from(2_u32)),
 				Bet::OddOrEven(_) => amount.saturating_mul(T::Balance::from(2_u32)),
 			}
 		}

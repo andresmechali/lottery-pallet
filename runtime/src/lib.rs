@@ -339,6 +339,7 @@ parameter_types! {
 
 impl pallet_lottery::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
+	type Balance = u128;
 	type LotteryRandomness = RandomnessCollectiveFlip;
 	type Currency = Balances;
 	type PalletId = RoulettePalletId;

@@ -32,11 +32,11 @@ pub enum OddOrEven {
 	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
 pub enum Bet {
-	ColorPick(RouletteColor),
-	FullPick(u32),
-	DozenPick(DozenOrColumn),
-	ColumnPick(DozenOrColumn),
-	HalfPick(Half),
+	Color(RouletteColor),
+	Full(u32),
+	Dozen(DozenOrColumn),
+	Column(DozenOrColumn),
+	Half(Half),
 	OddOrEven(OddOrEven),
 }
 
