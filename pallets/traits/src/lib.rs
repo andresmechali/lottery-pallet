@@ -4,7 +4,7 @@ use codec::{Decode, Encode};
 use frame_support::{inherent::Vec, pallet_prelude::MaxEncodedLen, RuntimeDebug};
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
 pub enum DozenOrColumn {
 	First,
@@ -13,7 +13,7 @@ pub enum DozenOrColumn {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
 pub enum Half {
 	First,
@@ -21,7 +21,7 @@ pub enum Half {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
 pub enum OddOrEven {
 	Odd,
@@ -29,7 +29,7 @@ pub enum OddOrEven {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
 pub enum Bet {
 	Color(RouletteColor),
@@ -41,7 +41,7 @@ pub enum Bet {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
 pub struct BetData<AccountId, BlockNumber, Balance> {
 	/// Bet id.
@@ -71,12 +71,11 @@ pub struct RouletteResult<AccountId, BlockNumber, Balance> {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
 )]
 pub enum RouletteColor {
 	Red,
 	Black,
-	Green,
 }
 
 pub trait RouletteNumber {
@@ -94,7 +93,6 @@ pub trait RouletteNumber {
 impl RouletteNumber for u32 {
 	fn to_color(&self) -> Option<RouletteColor> {
 		match self {
-			0 => Some(RouletteColor::Green),
 			1..=10 | 19..=28 => {
 				if self % 2 == 0 {
 					Some(RouletteColor::Black)

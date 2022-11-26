@@ -246,18 +246,21 @@ pub mod pallet {
 		}
 	}
 
-	// Helper functions
+	/// Helper functions
 	impl<T: Config> Pallet<T> {
+		/// Gets pallet account id.
 		fn account_id() -> T::AccountId {
 			T::PalletId::get().into_account_truncating()
 		}
 
+		/// Get a nonce from `BetNonce` and increments amount by 1.
 		fn get_and_increment_nonce() -> u64 {
 			let nonce = BetNonce::<T>::get();
 			BetNonce::<T>::put(nonce.wrapping_add(1));
 			nonce
 		}
 
+		/// Selects a random number between 0 and 36.
 		fn random_number() -> u32 {
 			let (random_seed, _) = T::LotteryRandomness::random_seed();
 			let random_number = <u32>::decode(&mut random_seed.as_ref())
@@ -265,6 +268,7 @@ pub mod pallet {
 			random_number % 36
 		}
 
+		/// States if a `Color` bet wins, given a winner number.
 		fn is_color_winner(color: RouletteColor, winner_number: u32) -> bool {
 			match winner_number.to_color() {
 				Some(winner_color) => winner_color == color,
@@ -272,6 +276,7 @@ pub mod pallet {
 			}
 		}
 
+		/// States if a `Dozen` bet wins, given a winner number.
 		fn is_dozen_winner(dozen: DozenOrColumn, winner_number: u32) -> bool {
 			match winner_number.to_dozen() {
 				Some(winner_dozen) => winner_dozen == dozen,
@@ -279,6 +284,7 @@ pub mod pallet {
 			}
 		}
 
+		/// States if a `Column` bet wins, given a winner number.
 		fn is_column_winner(column: DozenOrColumn, winner_number: u32) -> bool {
 			match winner_number.to_column() {
 				Some(winner_column) => winner_column == column,
@@ -286,10 +292,12 @@ pub mod pallet {
 			}
 		}
 
+		/// States if a `Full` bet wins, given a winner number.
 		fn is_full_winner(number: u32, winner_number: u32) -> bool {
 			winner_number == number
 		}
 
+		/// States if a `Half` bet wins, given a winner number.
 		fn is_half_winner(half: Half, winner_number: u32) -> bool {
 			match winner_number.to_half() {
 				Some(winner_half) => winner_half == half,
@@ -297,6 +305,7 @@ pub mod pallet {
 			}
 		}
 
+		/// States if an `OddOrEven` bet wins, given a winner number.
 		fn is_odd_or_even_winner(odd_or_even: OddOrEven, winner_number: u32) -> bool {
 			match winner_number.is_even() {
 				true => odd_or_even == OddOrEven::Even,
@@ -304,6 +313,7 @@ pub mod pallet {
 			}
 		}
 
+		/// States if a bet wins, given a winner number.
 		fn is_winner(pick: Bet, winner_number: u32) -> bool {
 			match pick {
 				Bet::Color(color) => Self::is_color_winner(color, winner_number),
@@ -317,6 +327,7 @@ pub mod pallet {
 			}
 		}
 
+		/// Amount that a given bet can win.
 		fn amount_won(pick: Bet, amount: T::Balance) -> T::Balance {
 			match pick {
 				Bet::Color(_) => amount.saturating_mul(T::Balance::from(2_u32)),
@@ -328,6 +339,7 @@ pub mod pallet {
 			}
 		}
 
+		/// Maximum mount that the pallet can lose given a set of bets.
 		fn max_payout(bets: Vec<BetData<T::AccountId, T::BlockNumber, T::Balance>>) -> T::Balance {
 			let mut max = T::Balance::zero();
 			for winner_number in 0_u32..=36_u32 {
