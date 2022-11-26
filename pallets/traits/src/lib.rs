@@ -4,7 +4,7 @@ use codec::{Decode, Encode};
 use frame_support::{inherent::Vec, pallet_prelude::MaxEncodedLen, RuntimeDebug};
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
 )]
 pub enum DozenOrColumn {
 	First,
@@ -13,7 +13,7 @@ pub enum DozenOrColumn {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
 )]
 pub enum Half {
 	First,
@@ -21,7 +21,7 @@ pub enum Half {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
 )]
 pub enum OddOrEven {
 	Odd,
@@ -29,7 +29,7 @@ pub enum OddOrEven {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
 )]
 pub enum Bet {
 	Color(RouletteColor),
@@ -40,7 +40,9 @@ pub enum Bet {
 	OddOrEven(OddOrEven),
 }
 
-#[derive(Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug)]
+#[derive(
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
+)]
 pub struct BetData<AccountId, BlockNumber, Balance> {
 	/// Bet id.
 	pub id: u64,
@@ -69,7 +71,7 @@ pub struct RouletteResult<AccountId, BlockNumber, Balance> {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
+	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone, Copy,
 )]
 pub enum RouletteColor {
 	Red,

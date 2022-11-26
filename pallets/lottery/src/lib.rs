@@ -14,9 +14,9 @@ pub mod pallet {
 	use codec::Codec;
 	use frame_support::traits::{
 		fungible::{Inspect, Mutate, Transfer},
-		LockIdentifier, LockableCurrency, WithdrawReasons,
+		LockIdentifier, LockableCurrency, Randomness, WithdrawReasons,
 	};
-	use frame_support::{pallet_prelude::*, traits::Randomness, PalletId};
+	use frame_support::{inherent::Vec, pallet_prelude::*, PalletId};
 	use frame_system::pallet_prelude::*;
 	use sp_core::H256;
 	use sp_runtime::{
@@ -86,7 +86,9 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// Not enough balance to afford the bet.
 		NotEnoughBalance,
-		/// Number must be between 0 and 36
+		/// Pallet cannot take the bet as it does have enough balance to afford a loss.
+		NotEnoughBalanceInPalletAccount,
+		/// Number must be between 0 and 36.
 		OutOfRange,
 	}
 
@@ -109,19 +111,19 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_: T::BlockNumber) -> Weight {
+			// Do not play if there are no active bets.
 			let players = OngoingBets::<T>::iter_keys().fold(0_u32, |acc, _| acc + 1_u32);
-
 			if players == 0_u32 {
-				// Do not play if there are no active bets.
 				return T::DbWeight::get().reads(1);
 			}
 
-			// Get pallet account
+			// Pallet account.
 			let account_id = Self::account_id();
 
-			// Get random roulette number
+			// Get random roulette number.
 			let winner_number = Self::random_number();
 
+			// Send or receive balance based on bet results, keeping track of totals.
 			let (total_income, total_payout) = OngoingBets::<T>::iter().fold(
 				(T::Balance::default(), T::Balance::default()),
 				|(mut acc_income, mut acc_payout), (bet_id, bet_data)| {
@@ -135,11 +137,21 @@ pub mod pallet {
 
 						acc_payout = acc_payout.saturating_add(payout_amount);
 
-						T::Currency::transfer(&account_id, &bet_data.owner, payout_amount, true);
+						let _ = T::Currency::transfer(
+							&account_id,
+							&bet_data.owner,
+							payout_amount,
+							true,
+						);
 					} else {
 						acc_income = acc_income.saturating_add(bet_data.amount);
 
-						T::Currency::transfer(&bet_data.owner, &account_id, bet_data.amount, true);
+						let _ = T::Currency::transfer(
+							&bet_data.owner,
+							&account_id,
+							bet_data.amount,
+							true,
+						);
 					}
 
 					// Copy bet to history storage.
@@ -173,23 +185,13 @@ pub mod pallet {
 
 			// Verify that the buyer has enough balance to afford the bet and is
 			// left with more than the existential deposit.
-			let total_balance = T::Currency::balance(&sender);
-			let existential_deposit = T::Currency::minimum_balance();
-			ensure!(
-				total_balance.saturating_sub(amount) >= existential_deposit,
-				Error::<T>::NotEnoughBalance
-			);
+			let reducible_balance = T::Currency::reducible_balance(&sender, true);
+			ensure!(reducible_balance >= amount, Error::<T>::NotEnoughBalance);
 
-			// Lock balance for sender
-			T::Currency::set_lock(PALLET_ID, &sender, amount, WithdrawReasons::RESERVE);
-
-			// TODO: calculate lock for pallet and set it
-			// Should be the amount that the pallet will pay in the worst case scenario
-
-			// Get the block number.
+			// Current block number.
 			let current_block = <frame_system::Pallet<T>>::block_number();
 
-			// Generate new bet
+			// Generate new bet.
 			let bet_id = Self::get_and_increment_nonce();
 
 			let bet_data = BetData {
@@ -199,6 +201,30 @@ pub mod pallet {
 				block: current_block,
 				bet: bet.clone(),
 			};
+
+			// Ongoing bets, including the potentially added one in this extrinsic.
+			let mut ongoing_bets: Vec<BetData<T::AccountId, T::BlockNumber, T::Balance>> =
+				OngoingBets::<T>::iter_values().collect::<Vec<_>>();
+			ongoing_bets.push(bet_data.clone());
+
+			// Amount that the pallet can lose in the worst case scenario.
+			let max_payout = Self::max_payout(ongoing_bets);
+
+			// Pallet account.
+			let account_id = Self::account_id();
+
+			// Verify that the pallet has enough free balance, not including the existential deposit.
+			let pallet_reducible_balance = T::Currency::reducible_balance(&account_id, true);
+			ensure!(
+				pallet_reducible_balance >= max_payout,
+				Error::<T>::NotEnoughBalanceInPalletAccount
+			);
+
+			// Lock balance for sender.
+			T::Currency::set_lock(PALLET_ID, &sender, amount, WithdrawReasons::RESERVE);
+
+			// Lock balance for pallet.
+			T::Currency::set_lock(PALLET_ID, &account_id, max_payout, WithdrawReasons::RESERVE);
 
 			// Store the bet.
 			OngoingBets::<T>::insert(bet_id, bet_data);
@@ -295,6 +321,26 @@ pub mod pallet {
 				Bet::Half(_) => amount.saturating_mul(T::Balance::from(2_u32)),
 				Bet::OddOrEven(_) => amount.saturating_mul(T::Balance::from(2_u32)),
 			}
+		}
+
+		fn max_payout(bets: Vec<BetData<T::AccountId, T::BlockNumber, T::Balance>>) -> T::Balance {
+			let mut max = T::Balance::zero();
+			for winner_number in 0_u32..=36_u32 {
+				let total_payout = bets.iter().fold(T::Balance::zero(), |acc, bet_data| {
+					let mut payout = T::Balance::zero();
+					let is_winner = Self::is_winner(bet_data.bet.clone(), winner_number);
+					if is_winner {
+						payout = Self::amount_won(bet_data.bet.clone(), bet_data.amount);
+					}
+					acc + payout
+				});
+
+				if total_payout > max {
+					max = total_payout;
+				}
+			}
+			log::info!("max -> {:?}", max);
+			max
 		}
 	}
 }
