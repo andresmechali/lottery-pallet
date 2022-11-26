@@ -120,6 +120,9 @@ pub mod pallet {
 			// Pallet account.
 			let account_id = Self::account_id();
 
+			// Unlock pallet funds.
+			T::Currency::remove_lock(PALLET_ID, &account_id);
+
 			// Get random roulette number.
 			let winner_number = Self::random_number();
 
@@ -127,12 +130,13 @@ pub mod pallet {
 			let (total_income, total_payout) = OngoingBets::<T>::iter().fold(
 				(T::Balance::default(), T::Balance::default()),
 				|(mut acc_income, mut acc_payout), (bet_id, bet_data)| {
-					// Unlock funds
+					// Unlock account funds.
 					T::Currency::remove_lock(PALLET_ID, &bet_data.owner);
 
 					let is_winner = Self::is_winner(bet_data.bet.clone(), winner_number);
 
 					if is_winner {
+						// Transfer prize to account.
 						let payout_amount = Self::amount_won(bet_data.bet.clone(), bet_data.amount);
 
 						acc_payout = acc_payout.saturating_add(payout_amount);
@@ -144,6 +148,7 @@ pub mod pallet {
 							true,
 						);
 					} else {
+						// Charge amount to account.
 						acc_income = acc_income.saturating_add(bet_data.amount);
 
 						let _ = T::Currency::transfer(
