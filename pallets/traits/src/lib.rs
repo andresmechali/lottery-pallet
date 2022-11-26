@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
-use frame_support::{pallet_prelude::MaxEncodedLen, RuntimeDebug};
+use frame_support::{inherent::Vec, pallet_prelude::MaxEncodedLen, RuntimeDebug};
 
 #[derive(
 	Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug, Clone,
@@ -50,10 +50,22 @@ pub struct BetData<AccountId, BlockNumber, Balance> {
 	pub amount: Balance,
 	/// Block in which bet occurs.
 	pub block: BlockNumber,
-	/// Winner number.
-	pub winner_number: u32,
 	/// Type of bet.
 	pub bet: Bet,
+}
+
+#[derive(Encode, Decode, Eq, PartialEq, scale_info::TypeInfo, MaxEncodedLen, RuntimeDebug)]
+pub struct RouletteResult<AccountId, BlockNumber, Balance> {
+	/// Block in which game took place.
+	pub block: BlockNumber,
+	/// Bets that participated in roulette.
+	pub bets: Vec<BetData<AccountId, BlockNumber, Balance>>,
+	/// Winner number.
+	pub winner_number: u32,
+	/// Amount received from losers.
+	pub income: Balance,
+	/// Amount paid to winners.
+	pub payout: Balance,
 }
 
 #[derive(

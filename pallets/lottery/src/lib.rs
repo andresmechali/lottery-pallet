@@ -72,23 +72,13 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		/// Event emitted when a bet has been placed
 		BetPlaced { bet_id: u64, who: T::AccountId, bet: Bet, amount: T::Balance },
-		/// Event emitted when a game was won.
-		RouletteWon {
-			who: T::AccountId,
-			bet_id: u64,
-			bet: Bet,
+		/// Event emitted when a game is played.
+		RoulettePlayed {
 			winner_number: u32,
 			winner_color: Option<RouletteColor>,
-			prize: T::Balance,
-		},
-		/// Event emitted when a game was lost.
-		RouletteLost {
-			who: T::AccountId,
-			bet_id: u64,
-			bet: Bet,
-			winner_number: u32,
-			winner_color: Option<RouletteColor>,
-			amount: T::Balance,
+			players: u32,
+			income: T::Balance,
+			payout: T::Balance,
 		},
 	}
 
@@ -112,6 +102,67 @@ pub mod pallet {
 	pub(super) type Bets<T: Config> =
 		StorageMap<_, Blake2_128Concat, u64, BetData<T::AccountId, T::BlockNumber, T::Balance>>;
 
+	#[pallet::storage]
+	pub(super) type OngoingBets<T: Config> =
+		StorageMap<_, Blake2_128Concat, u64, BetData<T::AccountId, T::BlockNumber, T::Balance>>;
+
+	#[pallet::hooks]
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		fn on_initialize(_: T::BlockNumber) -> Weight {
+			let players = OngoingBets::<T>::iter_keys().fold(0_u32, |acc, _| acc + 1_u32);
+
+			if players == 0_u32 {
+				// Do not play if there are no active bets.
+				return T::DbWeight::get().reads(1);
+			}
+
+			// Get pallet account
+			let account_id = Self::account_id();
+
+			// Get random roulette number
+			let winner_number = Self::random_number();
+
+			let (total_income, total_payout) = OngoingBets::<T>::iter().fold(
+				(T::Balance::default(), T::Balance::default()),
+				|(mut acc_income, mut acc_payout), (bet_id, bet_data)| {
+					// Unlock funds
+					T::Currency::remove_lock(PALLET_ID, &bet_data.owner);
+
+					let is_winner = Self::is_winner(bet_data.bet.clone(), winner_number);
+
+					if is_winner {
+						let payout_amount = Self::amount_won(bet_data.bet.clone(), bet_data.amount);
+
+						acc_payout = acc_payout.saturating_add(payout_amount);
+
+						T::Currency::transfer(&account_id, &bet_data.owner, payout_amount, true);
+					} else {
+						acc_income = acc_income.saturating_add(bet_data.amount);
+
+						T::Currency::transfer(&bet_data.owner, &account_id, bet_data.amount, true);
+					}
+
+					// Copy bet to history storage.
+					Bets::<T>::insert(bet_id, bet_data);
+					// Remove bet from ongoing bets.
+					OngoingBets::<T>::remove(bet_id);
+
+					(acc_income, acc_payout)
+				},
+			);
+
+			Self::deposit_event(Event::RoulettePlayed {
+				winner_number,
+				winner_color: winner_number.to_color(),
+				players,
+				income: total_income,
+				payout: total_payout,
+			});
+
+			T::DbWeight::get().reads(1) + T::DbWeight::get().writes(1)
+		}
+	}
+
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::weight(0)]
@@ -133,29 +184,24 @@ pub mod pallet {
 			T::Currency::set_lock(PALLET_ID, &sender, amount, WithdrawReasons::RESERVE);
 
 			// TODO: calculate lock for pallet and set it
+			// Should be the amount that the pallet will pay in the worst case scenario
 
 			// Get the block number.
 			let current_block = <frame_system::Pallet<T>>::block_number();
 
-			// Get random roulette number
-			let random_number = Self::random_number(37_u32);
-
 			// Generate new bet
 			let bet_id = Self::get_and_increment_nonce();
-			let account_id = Self::account_id();
+
+			let bet_data = BetData {
+				id: bet_id,
+				owner: sender.clone(),
+				amount,
+				block: current_block,
+				bet: bet.clone(),
+			};
 
 			// Store the bet.
-			Bets::<T>::insert(
-				bet_id,
-				BetData {
-					id: bet_id,
-					owner: sender.clone(),
-					amount,
-					block: current_block,
-					winner_number: random_number,
-					bet: bet.clone(),
-				},
-			);
+			OngoingBets::<T>::insert(bet_id, bet_data);
 
 			// Emit an event showing that the claim was created.
 			Self::deposit_event(Event::BetPlaced {
@@ -165,41 +211,8 @@ pub mod pallet {
 				bet: bet.clone(),
 			});
 
-			let is_winner = Self::is_winner(bet.clone(), random_number);
-
-			T::Currency::remove_lock(PALLET_ID, &sender);
-
-			if is_winner {
-				let payout_amount = Self::amount_won(bet.clone(), amount);
-				// TODO: unlock funds
-				// Transfer balance
-				T::Currency::transfer(&account_id, &sender, payout_amount, true)?;
-
-				Self::deposit_event(Event::RouletteWon {
-					who: sender,
-					bet_id,
-					bet,
-					winner_number: random_number,
-					winner_color: random_number.to_color(),
-					prize: payout_amount,
-				});
-			} else {
-				T::Currency::transfer(&sender, &account_id, amount, true)?;
-
-				Self::deposit_event(Event::RouletteLost {
-					who: sender,
-					bet_id,
-					bet,
-					winner_number: random_number,
-					winner_color: random_number.to_color(),
-					amount,
-				});
-			}
-
 			Ok(())
 		}
-
-		// TODO: play roulette once per block
 	}
 
 	// Helper functions
@@ -214,11 +227,11 @@ pub mod pallet {
 			nonce
 		}
 
-		fn random_number(total: u32) -> u32 {
+		fn random_number() -> u32 {
 			let (random_seed, _) = T::LotteryRandomness::random_seed();
 			let random_number = <u32>::decode(&mut random_seed.as_ref())
 				.expect("secure hashes should always be bigger than u32; qed");
-			random_number % total
+			random_number % 36
 		}
 
 		fn is_color_winner(color: RouletteColor, winner_number: u32) -> bool {
